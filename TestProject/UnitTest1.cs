@@ -151,7 +151,10 @@ public class CsvJsonConverterTests
         Assert.Equal(original.Count, restored.Count);
         for (int i = 0; i < original.Count; i++)
         {
-            Assert.Equal(original[i], restored[i]);
+            Assert.Equal(original[i].Vorname, restored[i].Vorname);
+            Assert.Equal(original[i].Nachname, restored[i].Nachname);
+            Assert.Equal(original[i].Alter, restored[i].Alter);
+            Assert.Equal(original[i].Email, restored[i].Email);
         }
     }
 
