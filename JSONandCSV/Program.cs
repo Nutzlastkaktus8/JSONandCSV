@@ -5,7 +5,7 @@ var personen = new List<Person>
 {
     new("Max", "Mustermann", 30, "max@example.com"),
     new("Anna", "Schmidt", 25, "anna@example.com"),
-    new("Peter", "Müller", 45, "peter@example.com")
+    new("Peter", "Mueller", 45, "peter@example.com")
 };
 
 Console.WriteLine("=== OBJEKT -> JSON ===");
