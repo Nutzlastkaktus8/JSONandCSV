@@ -207,4 +207,108 @@ public class CsvJsonConverterTests
     }
 
     #endregion
+
+    #region CultureInfo Tests
+
+    [Fact]
+    public void CsvToJson_WithDecimalNumbers_ParsesInvariantCultureCorrectly()
+    {
+        // Arrange - Dezimalzahlen mit Punkt (unabhängig von System-Kultur)
+        string csv = "Name;Price;Discount\nProduct;19.99;2.5";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert
+        Assert.Contains("\"Price\": 19.99", json);
+        Assert.Contains("\"Discount\": 2.5", json);
+    }
+
+    [Fact]
+    public void CsvToJson_WithGermanDecimalFormat_DoesNotParseAsNumber()
+    {
+        // Arrange - Deutsche Zahlenformat (Komma) soll NICHT als Zahl erkannt werden
+        string csv = "Name;Price\nProduct;19,99";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert - Sollte als String bleiben, da InvariantCulture verwendet wird
+        Assert.Contains("\"Price\": \"19,99\"", json);
+    }
+
+    [Fact]
+    public void CsvToJson_WithLargeNumbersAndThousandsSeparator_ParsesCorrectly()
+    {
+        // Arrange - Zahlen mit Tausendertrennzeichen
+        string csv = "Name;Population\nCity;1000000";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert
+        Assert.Contains("\"Population\": 1000000", json);
+    }
+
+    [Fact]
+    public void CsvToJson_WithEmptyValues_ConvertsToNull()
+    {
+        // Arrange - Leere Werte und Whitespace
+        string csv = "Name;Age;Email\nMax;30;\nAnna;;anna@test.com";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert
+        Assert.Contains("\"Email\": null", json);
+        Assert.Contains("\"Age\": null", json);
+    }
+
+    [Theory]
+    [InlineData("123", "123")]           // Integer
+    [InlineData("123.45", "123.45")]     // Double
+    [InlineData("true", "true")]         // Boolean
+    [InlineData("false", "false")]       // Boolean
+    [InlineData("  42  ", "42")]         // Integer mit Whitespace
+    [InlineData("text", "\"text\"")]     // String
+    public void CsvToJson_WithVariousTypes_InfersCorrectType(string input, string expectedInJson)
+    {
+        // Arrange
+        string csv = $"Value\n{input}";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert
+        Assert.Contains($"\"Value\": {expectedInJson}", json);
+    }
+
+    [Fact]
+    public void CsvToJson_WithNegativeNumbers_ParsesCorrectly()
+    {
+        // Arrange
+        string csv = "Temperature;Balance\n-15;-123.45";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert
+        Assert.Contains("\"Temperature\": -15", json);
+        Assert.Contains("\"Balance\": -123.45", json);
+    }
+
+    [Fact]
+    public void CsvToJson_WithScientificNotation_ParsesCorrectly()
+    {
+        // Arrange
+        string csv = "Value\n1.5E+3";
+
+        // Act
+        string json = CsvJsonConverter.CsvToJson(csv, ';');
+
+        // Assert
+        Assert.Contains("\"Value\": 1500", json);
+    }
+
+    #endregion
 }

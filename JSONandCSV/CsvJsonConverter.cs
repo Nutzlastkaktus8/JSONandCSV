@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -84,15 +85,33 @@ public static class CsvJsonConverter
 
             for (int i = 0; i < headers.Length && i < values.Length; i++)
             {
-                // Versuche numerische Werte zu erkennen
-                if (int.TryParse(values[i], out int intVal))
+                var value = values[i].Trim();
+                
+                // Leere Werte als null behandeln
+                if (string.IsNullOrEmpty(value))
+                {
+                    obj[headers[i]] = null!;
+                }
+                // Versuche numerische Werte zu erkennen (kulturunabhängig)
+                else if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intVal))
+                {
                     obj[headers[i]] = intVal;
-                else if (double.TryParse(values[i], out double doubleVal))
+                }
+                // Versuche Gleitkommazahlen zu erkennen
+                else if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double doubleVal))
+                {
                     obj[headers[i]] = doubleVal;
-                else if (bool.TryParse(values[i], out bool boolVal))
+                }
+                // Versuche boolesche Werte zu erkennen
+                else if (bool.TryParse(value, out bool boolVal))
+                {
                     obj[headers[i]] = boolVal;
+                }
+                // Ansonsten als String speichern
                 else
-                    obj[headers[i]] = values[i];
+                {
+                    obj[headers[i]] = value;
+                }
             }
 
             result.Add(obj);
