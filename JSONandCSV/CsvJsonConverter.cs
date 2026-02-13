@@ -1,12 +1,110 @@
 using System.Text;
+using System.Text.Json;
 
 namespace JSONandCSV;
 
 /// <summary>
-/// Konvertiert Objekte zwischen CSV und Listen.
+/// Konvertiert zwischen JSON und CSV Formaten.
 /// </summary>
 public static class CsvJsonConverter
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    #region JSON <-> CSV (Hauptfunktionalität)
+
+    /// <summary>
+    /// Konvertiert einen JSON-String direkt in einen CSV-String.
+    /// </summary>
+    public static string JsonToCsv(string json, char delimiter = ';')
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return string.Empty;
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        var firstElement = root[0];
+
+        // Header aus den Property-Namen des ersten Objekts erstellen
+        var properties = firstElement.EnumerateObject().Select(p => p.Name).ToList();
+        sb.AppendLine(string.Join(delimiter, properties));
+
+        // Datenzeilen erstellen
+        foreach (var element in root.EnumerateArray())
+        {
+            var values = new List<string>();
+            foreach (var propName in properties)
+            {
+                if (element.TryGetProperty(propName, out var prop))
+                {
+                    values.Add(prop.ValueKind == JsonValueKind.String 
+                        ? prop.GetString() ?? string.Empty 
+                        : prop.GetRawText());
+                }
+                else
+                {
+                    values.Add(string.Empty);
+                }
+            }
+            sb.AppendLine(string.Join(delimiter, values));
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// Konvertiert einen CSV-String direkt in einen JSON-String.
+    /// </summary>
+    public static string CsvToJson(string csv, char delimiter = ';')
+    {
+        if (string.IsNullOrWhiteSpace(csv))
+            return "[]";
+
+        using var reader = new StringReader(csv);
+
+        var headerLine = reader.ReadLine();
+        if (headerLine == null)
+            return "[]";
+
+        var headers = headerLine.Split(delimiter);
+        var result = new List<Dictionary<string, object>>();
+
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var values = line.Split(delimiter);
+            var obj = new Dictionary<string, object>();
+
+            for (int i = 0; i < headers.Length && i < values.Length; i++)
+            {
+                // Versuche numerische Werte zu erkennen
+                if (int.TryParse(values[i], out int intVal))
+                    obj[headers[i]] = intVal;
+                else if (double.TryParse(values[i], out double doubleVal))
+                    obj[headers[i]] = doubleVal;
+                else if (bool.TryParse(values[i], out bool boolVal))
+                    obj[headers[i]] = boolVal;
+                else
+                    obj[headers[i]] = values[i];
+            }
+
+            result.Add(obj);
+        }
+
+        return JsonSerializer.Serialize(result, JsonOptions);
+    }
+
+    #endregion
+
+    #region Objekt-basierte Hilfsmethoden
+
     /// <summary>
     /// Konvertiert eine Liste von Objekten in einen CSV-String.
     /// </summary>
@@ -15,29 +113,9 @@ public static class CsvJsonConverter
         if (items == null || items.Count == 0)
             return string.Empty;
 
-        var properties = typeof(T).GetProperties();
-        var sb = new StringBuilder();
-
-        // Header-Zeile erstellen
-        for (int i = 0; i < properties.Length; i++)
-        {
-            if (i > 0) sb.Append(delimiter);
-            sb.Append(properties[i].Name);
-        }
-        sb.AppendLine();
-
-        // Datenzeilen erstellen
-        foreach (var item in items)
-        {
-            for (int i = 0; i < properties.Length; i++)
-            {
-                if (i > 0) sb.Append(delimiter);
-                sb.Append(properties[i].GetValue(item)?.ToString() ?? string.Empty);
-            }
-            sb.AppendLine();
-        }
-
-        return sb.ToString().TrimEnd();
+        // Über JSON-Zwischenschritt für Konsistenz
+        string json = JsonSerializer.Serialize(items);
+        return JsonToCsv(json, delimiter);
     }
 
     /// <summary>
@@ -45,54 +123,10 @@ public static class CsvJsonConverter
     /// </summary>
     public static List<T> FromCsv<T>(string csv, char delimiter = ';') where T : class
     {
-        var result = new List<T>();
-        if (string.IsNullOrEmpty(csv))
-            return result;
-
-        using var reader = new StringReader(csv);
-
-        // Header-Zeile lesen und in Dictionary für O(1) Lookup umwandeln
-        var headerLine = reader.ReadLine();
-        if (headerLine == null)
-            return result;
-
-        var headers = headerLine.Split(delimiter);
-        var headerIndexMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < headers.Length; i++)
-        {
-            headerIndexMap[headers[i]] = i;
-        }
-
-        // Konstruktor und Parameter einmalig ermitteln
-        var constructor = typeof(T).GetConstructors().FirstOrDefault();
-        if (constructor == null)
-            return result;
-
-        var parameters = constructor.GetParameters();
-
-        // Datenzeilen verarbeiten
-        string? line;
-        while ((line = reader.ReadLine()) != null)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            var values = line.Split(delimiter);
-            var args = new object[parameters.Length];
-
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                // Dictionary-Lookup statt Array.FindIndex (O(1) statt O(n))
-                if (headerIndexMap.TryGetValue(parameters[i].Name!, out int headerIndex)
-                    && headerIndex < values.Length)
-                {
-                    args[i] = Convert.ChangeType(values[headerIndex], parameters[i].ParameterType);
-                }
-            }
-
-            result.Add((T)constructor.Invoke(args));
-        }
-
-        return result;
+        // Über JSON-Zwischenschritt für Konsistenz
+        string json = CsvToJson(csv, delimiter);
+        return JsonSerializer.Deserialize<List<T>>(json) ?? [];
     }
+
+    #endregion
 }
