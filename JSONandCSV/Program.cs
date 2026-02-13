@@ -1,7 +1,17 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 
-// Beispiel-Datenklasse
-var personen = new List<Person>
+// CSV-Trennzeichen basierend auf der aktuellen Kultur ermitteln
+// (z.B. ";" für DE/AT, "," für US/UK)
+char csvDelimiter = CultureInfo.CurrentCulture.TextInfo.ListSeparator[0];
+Console.WriteLine($"Erkanntes regionales CSV-Trennzeichen: '{csvDelimiter}'\n");
+
+// Oder manuell setzen:
+// char csvDelimiter = ';';
+// char csvDelimiter = ',';
+
+// Beispiel-Datenklasse     
+List<Person>? personen = new List<Person>
 {
     new("Max", "Mustermann", 30, "max@example.com"),
     new("Anna", "Schmidt", 25, "anna@example.com"),
@@ -14,11 +24,11 @@ string json = JsonSerializer.Serialize(personen, jsonOptions);
 Console.WriteLine(json);
 
 Console.WriteLine("\n=== JSON -> CSV ===");
-string csv = JsonToCsv(personen);
+string csv = JsonToCsv(personen, csvDelimiter);
 Console.WriteLine(csv);
 
 Console.WriteLine("\n=== CSV -> JSON ===");
-var personenAusCsv = CsvToObjects<Person>(csv);
+var personenAusCsv = CsvToObjects<Person>(csv, csvDelimiter);
 string jsonAusCsv = JsonSerializer.Serialize(personenAusCsv, jsonOptions);
 Console.WriteLine(jsonAusCsv);
 
@@ -31,45 +41,78 @@ foreach (var p in wiederhergestelltePersonen!)
 }
 
 // Hilfsmethoden
-static string JsonToCsv<T>(List<T> items)
+static string JsonToCsv<T>(List<T> items, char delimiter = ';')
 {
     if (items == null || items.Count == 0)
         return string.Empty;
 
     var properties = typeof(T).GetProperties();
-    var header = string.Join(";", properties.Select(p => p.Name));
-    var lines = new List<string> { header };
+    var sb = new System.Text.StringBuilder();
 
+    // Header-Zeile erstellen
+    for (int i = 0; i < properties.Length; i++)
+    {
+        if (i > 0) sb.Append(delimiter);
+        sb.Append(properties[i].Name);
+    }
+    sb.AppendLine();
+
+    // Datenzeilen erstellen
     foreach (var item in items)
     {
-        var values = properties.Select(p => p.GetValue(item)?.ToString() ?? string.Empty);
-        lines.Add(string.Join(";", values));
+        for (int i = 0; i < properties.Length; i++)
+        {
+            if (i > 0) sb.Append(delimiter);
+            sb.Append(properties[i].GetValue(item)?.ToString() ?? string.Empty);
+        }
+        sb.AppendLine();
     }
 
-    return string.Join(Environment.NewLine, lines);
+    return sb.ToString().TrimEnd();
 }
 
-static List<T> CsvToObjects<T>(string csv) where T : class
+static List<T> CsvToObjects<T>(string csv, char delimiter = ';') where T : class
 {
-    var lines = csv.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
     var result = new List<T>();
-
-    if (lines.Length < 2)
+    if (string.IsNullOrEmpty(csv))
         return result;
 
-    var headers = lines[0].Split(';');
-    var constructor = typeof(T).GetConstructors().First();
+    using var reader = new StringReader(csv);
+
+    // Header-Zeile lesen und in Dictionary für O(1) Lookup umwandeln
+    var headerLine = reader.ReadLine();
+    if (headerLine == null)
+        return result;
+
+    var headers = headerLine.Split(delimiter);
+    var headerIndexMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    for (int i = 0; i < headers.Length; i++)
+    {
+        headerIndexMap[headers[i]] = i;
+    }
+
+    // Konstruktor und Parameter einmalig ermitteln
+    var constructor = typeof(T).GetConstructors().FirstOrDefault();
+    if (constructor == null)
+        return result;
+
     var parameters = constructor.GetParameters();
 
-    foreach (var line in lines.Skip(1))
+    // Datenzeilen verarbeiten
+    string? line;
+    while ((line = reader.ReadLine()) != null)
     {
-        var values = line.Split(';');
+        if (string.IsNullOrWhiteSpace(line))
+            continue;
+
+        var values = line.Split(delimiter);
         var args = new object[parameters.Length];
 
         for (int i = 0; i < parameters.Length; i++)
         {
-            var headerIndex = Array.FindIndex(headers, h => string.Equals(h, parameters[i].Name, StringComparison.OrdinalIgnoreCase));
-            if (headerIndex >= 0 && headerIndex < values.Length)
+            // Dictionary-Lookup statt Array.FindIndex (O(1) statt O(n))
+            if (headerIndexMap.TryGetValue(parameters[i].Name!, out int headerIndex) 
+                && headerIndex < values.Length)
             {
                 args[i] = Convert.ChangeType(values[headerIndex], parameters[i].ParameterType);
             }
